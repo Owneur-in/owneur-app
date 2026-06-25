@@ -1,0 +1,25 @@
+{
+  "short_name": "Owneur",
+  "name": "Owneur — Turn Your Skill Into Income",
+  "description": "Find trusted local entrepreneurs or start your own business in minutes",
+  "icons": [
+    {
+      "src": "icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "theme_color": "#0A6B52",
+  "background_color": "#0A6B52",
+  "categories": ["business", "lifestyle", "shopping"]
+}
