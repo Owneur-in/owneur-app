@@ -1,96 +1,72 @@
-import React, { useState } from 'react';
+import React, { useState } from 'react'
+import { supabase } from '../supabase'
 
 export default function Login({ nav, setMobileNumber, showToast }) {
-  const [mobile, setMobile] = useState('');
-  const [error, setError] = useState('');
-  const [loading, setLoading] = useState(false);
+  const [mobile, setMobile] = useState('')
+  const [error, setError] = useState('')
+  const [loading, setLoading] = useState(false)
 
   function validate(val) {
-    setMobile(val);
-    if (val.length > 0 && (!/^\d+$/.test(val) || val.length < 10)) {
-      setError('Please enter a valid 10-digit mobile number');
+    const clean = val.replace(/\D/g, '').slice(0, 10)
+    setMobile(clean)
+    if (clean.length > 0 && clean.length < 10) {
+      setError('Please enter a valid 10-digit mobile number')
     } else {
-      setError('');
+      setError('')
     }
   }
 
   async function sendOTP() {
     if (!/^\d{10}$/.test(mobile)) {
-      setError('Please enter a valid 10-digit mobile number');
-      return;
+      setError('Please enter a valid 10-digit mobile number')
+      return
     }
-    setLoading(true);
+    setError('')
+    setLoading(true)
     try {
-      setMobileNumber(mobile);
-      nav('otp');
-      showToast('OTP sent to +91 ' + mobile);
+      const { data, error: fnError } = await supabase.functions.invoke('send-otp', {
+        body: { phone: mobile, action: 'send' }
+      })
+      if (fnError || !data?.success) {
+        throw new Error(data?.error || 'Failed to send OTP')
+      }
+      setMobileNumber(mobile)
+      showToast('OTP sent to ' + mobile)
+      nav('otp')
     } catch (err) {
-      showToast('Failed to send OTP. Please try again.');
+      setError(err.message || 'Could not send OTP. Please try again.')
     }
-    setLoading(false);
+    setLoading(false)
   }
 
   return (
     <div style={{ minHeight: '100vh', background: '#fff' }}>
-      {/* Top bar */}
       <div className="topbar">
-        <button className="back-btn" onClick={() => nav('landing')}>
-          ←
-        </button>
+        <button className="back-btn" onClick={function() { nav('landing') }}>←</button>
         <span className="topbar-title">List Your Business</span>
       </div>
-
       <div style={{ padding: '32px 20px', maxWidth: 420, margin: '0 auto' }}>
-        {/* Icon */}
         <div style={{ textAlign: 'center', marginBottom: 28 }}>
-          <div
-            style={{
-              width: 64,
-              height: 64,
-              background: '#DDF4EC',
-              borderRadius: '50%',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              fontSize: 28,
-              margin: '0 auto 14px',
-            }}
-          >
+          <div style={{ width: 64, height: 64, background: '#DDF4EC', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 28, margin: '0 auto 14px' }}>
             📱
           </div>
-          <h2 style={{ fontSize: 20, fontWeight: 700, marginBottom: 6 }}>
-            Enter your mobile number
-          </h2>
-          <p style={{ color: '#516B61', fontSize: 14 }}>
-            We will send a 4-digit OTP to verify
-          </p>
+          <h2 style={{ fontSize: 20, fontWeight: 700, marginBottom: 6 }}>Enter your mobile number</h2>
+          <p style={{ color: '#516B61', fontSize: 14 }}>You will receive a 4-digit OTP to verify</p>
         </div>
 
-        {/* Mobile input */}
         <div className="input-group">
           <div style={{ display: 'flex', gap: 8 }}>
-            <div
-              style={{
-                padding: '13px 14px',
-                border: '1.5px solid rgba(0,0,0,0.12)',
-                borderRadius: 12,
-                fontSize: 14,
-                fontWeight: 600,
-                background: '#F2F6F4',
-                color: '#0D1F18',
-                whiteSpace: 'nowrap',
-              }}
-            >
+            <div style={{ padding: '13px 14px', border: '1.5px solid rgba(0,0,0,0.12)', borderRadius: 12, fontSize: 14, fontWeight: 600, background: '#F2F6F4', color: '#0D1F18', whiteSpace: 'nowrap' }}>
               🇮🇳 +91
             </div>
             <input
-              className={`input ${error ? 'error' : ''}`}
+              className={error ? 'input error' : 'input'}
               type="tel"
               placeholder="98765 43210"
               maxLength={10}
               value={mobile}
-              onChange={(e) => validate(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && sendOTP()}
+              onChange={function(e) { validate(e.target.value) }}
+              onKeyDown={function(e) { if (e.key === 'Enter') sendOTP() }}
               style={{ flex: 1 }}
             />
           </div>
@@ -100,33 +76,19 @@ export default function Login({ nav, setMobileNumber, showToast }) {
         <button
           className="btn btn-primary"
           onClick={sendOTP}
-          disabled={loading}
-          style={{ marginBottom: 20, opacity: loading ? 0.7 : 1 }}
+          disabled={loading || mobile.length !== 10}
+          style={{ marginBottom: 20, opacity: loading || mobile.length !== 10 ? 0.7 : 1 }}
         >
-          {loading ? 'Sending...' : 'Send OTP →'}
+          {loading ? 'Sending OTP...' : 'Send OTP →'}
         </button>
 
-        <p
-          style={{
-            textAlign: 'center',
-            fontSize: 12,
-            color: '#516B61',
-            lineHeight: 1.6,
-          }}
-        >
+        <p style={{ textAlign: 'center', fontSize: 12, color: '#516B61', lineHeight: 1.6 }}>
           By continuing, you agree to our{' '}
-          <span
-            style={{
-              color: '#0A6B52',
-              textDecoration: 'underline',
-              cursor: 'pointer',
-            }}
-            onClick={() => nav('terms')}
-          >
+          <span style={{ color: '#0A6B52', textDecoration: 'underline', cursor: 'pointer' }} onClick={function() { nav('terms') }}>
             Terms of Service
           </span>
         </p>
       </div>
     </div>
-  );
+  )
 }

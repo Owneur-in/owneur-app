@@ -1,165 +1,167 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { supabase } from '../supabase';
+import React, { useState, useRef, useEffect } from 'react'
+import { supabase } from '../supabase'
 
 export default function OTP({ nav, mobileNumber, setUser, showToast }) {
-  const [digits, setDigits] = useState(['', '', '', '']);
-  const [error, setError] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [countdown, setCountdown] = useState(30);
-  const [canResend, setCanResend] = useState(false);
-  const [attempts, setAttempts] = useState(0);
-  const refs = [useRef(), useRef(), useRef(), useRef()];
+  const [digits, setDigits] = useState(['', '', '', ''])
+  const [error, setError] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [countdown, setCountdown] = useState(30)
+  const [canResend, setCanResend] = useState(false)
+  const refs = [useRef(), useRef(), useRef(), useRef()]
 
-  useEffect(() => {
-    refs[0].current?.focus();
-    const timer = setInterval(() => {
-      setCountdown((c) => {
+  useEffect(function() {
+    setTimeout(function() {
+      if (refs[0].current) refs[0].current.focus()
+    }, 300)
+    startCountdown()
+  }, [])
+
+  function startCountdown() {
+    setCountdown(30)
+    setCanResend(false)
+    const timer = setInterval(function() {
+      setCountdown(function(c) {
         if (c <= 1) {
-          setCanResend(true);
-          clearInterval(timer);
-          return 0;
+          clearInterval(timer)
+          setCanResend(true)
+          return 0
         }
-        return c - 1;
-      });
-    }, 1000);
-    return () => clearInterval(timer);
-  }, []);
+        return c - 1
+      })
+    }, 1000)
+  }
 
   function handleDigit(index, value) {
-    if (!/^\d*$/.test(value)) return;
-    const newDigits = [...digits];
-    newDigits[index] = value.slice(-1);
-    setDigits(newDigits);
-    setError('');
-    if (value && index < 3) refs[index + 1].current?.focus();
-    if (index === 3 && value) verifyWithDigits(newDigits);
+    if (!/^\d*$/.test(value)) return
+    const newDigits = [...digits]
+    newDigits[index] = value.slice(-1)
+    setDigits(newDigits)
+    setError('')
+    if (value && index < 3) {
+      refs[index + 1].current?.focus()
+    }
+    if (index === 3 && value) {
+      verifyOTP(newDigits)
+    }
   }
 
   function handleKey(index, e) {
     if (e.key === 'Backspace' && !digits[index] && index > 0) {
-      refs[index - 1].current?.focus();
+      refs[index - 1].current?.focus()
     }
   }
 
-  async function verifyWithDigits(d) {
-    const otp = d.join('');
-    if (otp.length < 4) return;
-    if (attempts >= 3) {
-      setError('Too many attempts. Please request a new OTP.');
-      return;
+  async function verifyOTP(d) {
+    const otpString = (d || digits).join('')
+    if (otpString.length < 4) {
+      setError('Please enter the complete 4-digit OTP')
+      return
     }
-    setLoading(true);
+    setLoading(true)
+    setError('')
     try {
-      const phone = '+91' + mobileNumber;
-      const { data, error: err } = await supabase.auth.verifyOtp({
-        phone,
-        token: otp,
-        type: 'sms',
-      });
-      if (err) throw err;
-      setUser(data.user);
-      showToast('Verified successfully!');
-      nav('kyc');
+      const { data, error: fnError } = await supabase.functions.invoke('send-otp', {
+        body: {
+          phone: mobileNumber,
+          action: 'verify',
+          otp_entered: otpString
+        }
+      })
+
+      if (fnError || !data?.success) {
+        throw new Error(data?.error || 'Verification failed')
+      }
+
+      // Set the session using returned tokens
+      if (data.access_token) {
+        await supabase.auth.setSession({
+          access_token: data.access_token,
+          refresh_token: data.refresh_token
+        })
+        const { data: sessionData } = await supabase.auth.getUser()
+        setUser(sessionData?.user)
+      }
+
+      showToast('Verified successfully!')
+      nav('kyc')
+
     } catch (err) {
-      setAttempts((a) => a + 1);
-      const remaining = 2 - attempts;
-      setError(
-        remaining > 0
-          ? `Incorrect OTP. ${remaining} attempt${
-              remaining === 1 ? '' : 's'
-            } remaining.`
-          : 'Too many incorrect attempts. Request a new OTP.'
-      );
-      setDigits(['', '', '', '']);
-      refs[0].current?.focus();
+      setError(err.message || 'Incorrect OTP. Please try again.')
+      setDigits(['', '', '', ''])
+      setTimeout(function() {
+        if (refs[0].current) refs[0].current.focus()
+      }, 100)
     }
-    setLoading(false);
+    setLoading(false)
   }
 
   async function resendOTP() {
-    if (!canResend) return;
+    if (!canResend) return
+    setDigits(['', '', '', ''])
+    setError('')
     try {
-      await supabase.auth.signInWithOtp({ phone: '+91' + mobileNumber });
-      showToast('OTP resent!');
-      setCountdown(30);
-      setCanResend(false);
-      setAttempts(0);
-      setError('');
+      const { data, error: fnError } = await supabase.functions.invoke('send-otp', {
+        body: { phone: mobileNumber, action: 'send' }
+      })
+      if (fnError || !data?.success) throw new Error('Failed to resend')
+      showToast('OTP resent to ' + mobileNumber)
+      startCountdown()
     } catch {
-      showToast('Failed to resend. Try again.');
+      showToast('Could not resend OTP. Please try again.')
     }
   }
 
   return (
     <div style={{ minHeight: '100vh', background: '#fff' }}>
       <div className="topbar">
-        <button className="back-btn" onClick={() => nav('login')}>
-          ←
-        </button>
+        <button className="back-btn" onClick={function() { nav('login') }}>←</button>
         <span className="topbar-title">Verify OTP</span>
       </div>
 
       <div style={{ padding: '32px 20px', maxWidth: 420, margin: '0 auto' }}>
         <div style={{ textAlign: 'center', marginBottom: 24 }}>
-          <div
-            style={{
-              width: 64,
-              height: 64,
-              background: '#DDF4EC',
-              borderRadius: '50%',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              fontSize: 28,
-              margin: '0 auto 14px',
-            }}
-          >
+          <div style={{ width: 64, height: 64, background: '#DDF4EC', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 28, margin: '0 auto 14px' }}>
             🔐
           </div>
-          <h2 style={{ fontSize: 20, fontWeight: 700, marginBottom: 6 }}>
-            Enter the 4-digit OTP
-          </h2>
+          <h2 style={{ fontSize: 20, fontWeight: 700, marginBottom: 6 }}>Enter the 4-digit OTP</h2>
           <p style={{ color: '#516B61', fontSize: 14 }}>
-            Sent to +91 {mobileNumber?.slice(0, 5)}XXXXX
+            Sent to +91 {mobileNumber ? mobileNumber.slice(0, 5) + 'XXXXX' : ''}
+          </p>
+          <p style={{ color: '#516B61', fontSize: 12, marginTop: 4 }}>
+            You will receive a call with your OTP
           </p>
         </div>
 
-        {/* OTP boxes */}
         <div className="otp-row">
-          {digits.map((d, i) => (
-            <input
-              key={i}
-              ref={refs[i]}
-              className={`otp-box ${error ? 'error' : ''}`}
-              type="tel"
-              maxLength={1}
-              value={d}
-              onChange={(e) => handleDigit(i, e.target.value)}
-              onKeyDown={(e) => handleKey(i, e)}
-            />
-          ))}
+          {digits.map(function(d, i) {
+            return (
+              <input
+                key={i}
+                ref={refs[i]}
+                className={error ? 'otp-box error' : 'otp-box'}
+                type="tel"
+                maxLength={1}
+                value={d}
+                onChange={function(e) { handleDigit(i, e.target.value) }}
+                onKeyDown={function(e) { handleKey(i, e) }}
+              />
+            )
+          })}
         </div>
 
         {error && (
-          <div
-            style={{
-              color: '#E03535',
-              fontSize: 13,
-              textAlign: 'center',
-              marginBottom: 12,
-            }}
-          >
+          <div style={{ color: '#E03535', fontSize: 13, textAlign: 'center', marginBottom: 12, lineHeight: 1.5 }}>
             {error}
           </div>
         )}
 
         <button
           className="btn btn-primary"
-          onClick={() => verifyWithDigits(digits)}
+          onClick={function() { verifyOTP(digits) }}
           disabled={loading || digits.join('').length < 4}
           style={{ marginBottom: 16, opacity: loading ? 0.7 : 1 }}
         >
-          {loading ? 'Verifying...' : 'Verify & Continue'}
+          {loading ? 'Verifying...' : 'Verify and Continue'}
         </button>
 
         <p style={{ textAlign: 'center', fontSize: 13, color: '#516B61' }}>
@@ -179,5 +181,5 @@ export default function OTP({ nav, mobileNumber, setUser, showToast }) {
         </p>
       </div>
     </div>
-  );
+  )
 }
