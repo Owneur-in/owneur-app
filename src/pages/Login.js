@@ -1,5 +1,7 @@
 import React, { useState } from 'react'
-import { supabase } from '../supabase'
+
+const FUNCTION_URL = process.env.REACT_APP_SUPABASE_URL + '/functions/v1/quick-worker'
+const ANON_KEY = process.env.REACT_APP_SUPABASE_ANON_KEY
 
 export default function Login({ nav, setMobileNumber, showToast }) {
   const [mobile, setMobile] = useState('')
@@ -24,14 +26,18 @@ export default function Login({ nav, setMobileNumber, showToast }) {
     setError('')
     setLoading(true)
     try {
-      const { data, error: fnError } = await supabase.functions.invoke('send-otp', {
-        body: { phone: mobile, action: 'send' }
+      const response = await fetch(FUNCTION_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer ' + ANON_KEY
+        },
+        body: JSON.stringify({ phone: mobile, action: 'send' })
       })
-      if (fnError || !data?.success) {
-        throw new Error(data?.error || 'Failed to send OTP')
-      }
+      const data = await response.json()
+      if (!data?.success) throw new Error(data?.error || 'Failed to send OTP')
       setMobileNumber(mobile)
-      showToast('OTP sent to ' + mobile)
+      showToast('OTP sent! You will receive a call shortly.')
       nav('otp')
     } catch (err) {
       setError(err.message || 'Could not send OTP. Please try again.')
@@ -47,18 +53,13 @@ export default function Login({ nav, setMobileNumber, showToast }) {
       </div>
       <div style={{ padding: '32px 20px', maxWidth: 420, margin: '0 auto' }}>
         <div style={{ textAlign: 'center', marginBottom: 28 }}>
-          <div style={{ width: 64, height: 64, background: '#DDF4EC', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 28, margin: '0 auto 14px' }}>
-            📱
-          </div>
+          <div style={{ width: 64, height: 64, background: '#DDF4EC', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 28, margin: '0 auto 14px' }}>📱</div>
           <h2 style={{ fontSize: 20, fontWeight: 700, marginBottom: 6 }}>Enter your mobile number</h2>
-          <p style={{ color: '#516B61', fontSize: 14 }}>You will receive a 4-digit OTP to verify</p>
+          <p style={{ color: '#516B61', fontSize: 14 }}>You will receive a 4-digit OTP via call</p>
         </div>
-
         <div className="input-group">
           <div style={{ display: 'flex', gap: 8 }}>
-            <div style={{ padding: '13px 14px', border: '1.5px solid rgba(0,0,0,0.12)', borderRadius: 12, fontSize: 14, fontWeight: 600, background: '#F2F6F4', color: '#0D1F18', whiteSpace: 'nowrap' }}>
-              🇮🇳 +91
-            </div>
+            <div style={{ padding: '13px 14px', border: '1.5px solid rgba(0,0,0,0.12)', borderRadius: 12, fontSize: 14, fontWeight: 600, background: '#F2F6F4', color: '#0D1F18', whiteSpace: 'nowrap' }}>🇮🇳 +91</div>
             <input
               className={error ? 'input error' : 'input'}
               type="tel"
@@ -72,7 +73,6 @@ export default function Login({ nav, setMobileNumber, showToast }) {
           </div>
           {error && <div className="field-error show">{error}</div>}
         </div>
-
         <button
           className="btn btn-primary"
           onClick={sendOTP}
@@ -81,12 +81,9 @@ export default function Login({ nav, setMobileNumber, showToast }) {
         >
           {loading ? 'Sending OTP...' : 'Send OTP →'}
         </button>
-
         <p style={{ textAlign: 'center', fontSize: 12, color: '#516B61', lineHeight: 1.6 }}>
           By continuing, you agree to our{' '}
-          <span style={{ color: '#0A6B52', textDecoration: 'underline', cursor: 'pointer' }} onClick={function() { nav('terms') }}>
-            Terms of Service
-          </span>
+          <span style={{ color: '#0A6B52', textDecoration: 'underline', cursor: 'pointer' }} onClick={function() { nav('terms') }}>Terms of Service</span>
         </p>
       </div>
     </div>
