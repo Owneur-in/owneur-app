@@ -1,58 +1,78 @@
-import React, { useState, useEffect } from 'react';
-import { supabase } from './supabase';
-import Landing from './pages/Landing';
-import Login from './pages/Login';
-import OTP from './pages/OTP';
-import KYC from './pages/KYC';
-import Dashboard from './pages/Dashboard';
-import CreateListing from './pages/CreateListing';
-import SellerProfile from './pages/SellerProfile';
-import Home from './pages/Home';
-import Search from './pages/Search';
-import BizDetail from './pages/BizDetail';
-import WriteReview from './pages/WriteReview';
-import Saved from './pages/Saved';
-import FAQ from './pages/FAQ';
-import Terms from './pages/Terms';
-import AdminLogin from './pages/AdminLogin';
-import Admin from './pages/Admin';
-import Suspended from './pages/Suspended';
+/**
+ * App.js
+ *
+ * PURPOSE: Root component. Manages all screen routing and shared state.
+ * PATTERN: Single-page app with screen-based navigation (no React Router).
+ *   Each screen is rendered conditionally. nav() switches screens.
+ * STATE:
+ *   screen       — current active screen name
+ *   prevScreen   — screen navigated from (for back buttons)
+ *   user         — Supabase auth user object (null if not logged in)
+ *   selectedBiz  — business object passed to detail/review screens
+ *   mobileNumber — seller's phone number during OTP flow
+ *   sellerName   — seller's full name captured during login
+ * SECURITY: Auth state synced with Supabase on mount.
+ */
+import React, { useState, useEffect } from 'react'
+import { supabase } from './supabase'
+import Landing from './pages/Landing'
+import Login from './pages/Login'
+import OTP from './pages/OTP'
+import KYC from './pages/KYC'
+import Dashboard from './pages/Dashboard'
+import CreateListing from './pages/CreateListing'
+import SellerProfile from './pages/SellerProfile'
+import Home from './pages/Home'
+import Search from './pages/Search'
+import BizDetail from './pages/BizDetail'
+import WriteReview from './pages/WriteReview'
+import Saved from './pages/Saved'
+import FAQ from './pages/FAQ'
+import Terms from './pages/Terms'
+import AdminLogin from './pages/AdminLogin'
+import Admin from './pages/Admin'
+import Suspended from './pages/Suspended'
+import Catalogue from './pages/Catalogue'
 
+/** Toast notification component */
 function Toast({ show, msg }) {
-  return <div className={`toast ${show ? 'show' : ''}`}>{msg}</div>;
+  return <div className={`toast ${show ? 'show' : ''}`}>{msg}</div>
 }
 
 export default function App() {
-  const [screen, setScreen] = useState('landing');
-  const [prevScreen, setPrevScreen] = useState('home');
-  const [user, setUser] = useState(null);
-  const [toast, setToast] = useState({ show: false, msg: '' });
-  const [selectedBiz, setSelectedBiz] = useState(null);
-  const [mobileNumber, setMobileNumber] = useState('');
+  const [screen, setScreen] = useState('landing')
+  const [prevScreen, setPrevScreen] = useState('home')
+  const [user, setUser] = useState(null)
+  const [toast, setToast] = useState({ show: false, msg: '' })
+  const [selectedBiz, setSelectedBiz] = useState(null)
+  const [mobileNumber, setMobileNumber] = useState('')
+  const [sellerName, setSellerName] = useState('')
 
+  // Sync auth state with Supabase on app load
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session) setUser(session.user);
-    });
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user ?? null);
-    });
-    return () => subscription.unsubscribe();
-  }, []);
+      if (session) setUser(session.user)
+    })
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user ?? null)
+    })
+    return () => subscription.unsubscribe()
+  }, [])
 
+  /** Navigate to a new screen, remembering where we came from */
   function nav(to) {
-    setPrevScreen(screen);
-    setScreen(to);
-    window.scrollTo(0, 0);
+    setPrevScreen(screen)
+    setScreen(to)
+    window.scrollTo(0, 0)
   }
 
+  /** Show a toast message for 2.8 seconds */
   function showToast(msg) {
-    setToast({ show: true, msg });
-    setTimeout(() => setToast({ show: false, msg: '' }), 2800);
+    setToast({ show: true, msg })
+    setTimeout(() => setToast({ show: false, msg: '' }), 2800)
   }
 
+  // Props passed to every page
   const shared = {
     nav,
     prevScreen,
@@ -63,28 +83,31 @@ export default function App() {
     setSelectedBiz,
     mobileNumber,
     setMobileNumber,
-  };
+    sellerName,
+    setSellerName
+  }
 
   return (
     <div className="app-container">
-      {screen === 'landing' && <Landing {...shared} />}
-      {screen === 'login' && <Login {...shared} />}
-      {screen === 'otp' && <OTP {...shared} />}
-      {screen === 'kyc' && <KYC {...shared} />}
-      {screen === 'dashboard' && <Dashboard {...shared} />}
-      {screen === 'create' && <CreateListing {...shared} />}
+      {screen === 'landing'        && <Landing {...shared} />}
+      {screen === 'login'          && <Login {...shared} />}
+      {screen === 'otp'            && <OTP {...shared} />}
+      {screen === 'kyc'            && <KYC {...shared} />}
+      {screen === 'dashboard'      && <Dashboard {...shared} />}
+      {screen === 'create'         && <CreateListing {...shared} />}
       {screen === 'seller-profile' && <SellerProfile {...shared} />}
-      {screen === 'home' && <Home {...shared} />}
-      {screen === 'search' && <Search {...shared} />}
-      {screen === 'biz-detail' && <BizDetail {...shared} />}
-      {screen === 'write-review' && <WriteReview {...shared} />}
-      {screen === 'saved' && <Saved {...shared} />}
-      {screen === 'faq' && <FAQ {...shared} />}
-      {screen === 'terms' && <Terms {...shared} />}
-      {screen === 'admin-login' && <AdminLogin {...shared} />}
-      {screen === 'admin' && <Admin {...shared} />}
-      {screen === 'suspended' && <Suspended {...shared} />}
+      {screen === 'catalogue'      && <Catalogue {...shared} />}
+      {screen === 'home'           && <Home {...shared} />}
+      {screen === 'search'         && <Search {...shared} />}
+      {screen === 'biz-detail'     && <BizDetail {...shared} />}
+      {screen === 'write-review'   && <WriteReview {...shared} />}
+      {screen === 'saved'          && <Saved {...shared} />}
+      {screen === 'faq'            && <FAQ {...shared} />}
+      {screen === 'terms'          && <Terms {...shared} />}
+      {screen === 'admin-login'    && <AdminLogin {...shared} />}
+      {screen === 'admin'          && <Admin {...shared} />}
+      {screen === 'suspended'      && <Suspended {...shared} />}
       <Toast show={toast.show} msg={toast.msg} />
     </div>
-  );
+  )
 }
