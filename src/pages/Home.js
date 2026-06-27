@@ -25,7 +25,8 @@ const CAT_BG = {
 const CAT_EMOJI = {
   'Home Food': '🍱', 'Tiffin': '🥡', 'Mehendi': '🌸', 'Bakery': '🎂',
   'Tailoring': '✂️', 'Tuition': '📚', 'Beautician': '💄', 'Electrician': '⚡',
-  'Fruits': '🍎', 'Flowers': '💐', 'Freelance': '💻', 'Others': '🔧',
+  'Fruits': '🍎', 'Flowers': '💐', 'Freelance': '💻', 'Others': '🔧','Fish': '🐟',
+'Mechanic': '🔩', 'Dance class': '💃',
 }
 
 export default function Home({ nav, setSelectedBiz, showToast }) {
