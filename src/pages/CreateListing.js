@@ -23,20 +23,6 @@ import { supabase } from '../supabase'
 
 // ── CONSTANTS ─────────────────────────────────────────────────────────────────
 
-const CATEGORIES = [
-  { emoji: '🍱', name: 'Home Food' },
-  { emoji: '🥡', name: 'Tiffin' },
-  { emoji: '🌸', name: 'Mehendi' },
-  { emoji: '🎂', name: 'Bakery' },
-  { emoji: '✂️', name: 'Tailoring' },
-  { emoji: '📚', name: 'Tuition' },
-  { emoji: '💄', name: 'Beautician' },
-  { emoji: '⚡', name: 'Electrician' },
-  { emoji: '🍎', name: 'Fruits' },
-  { emoji: '💐', name: 'Flowers' },
-  { emoji: '💻', name: 'Freelance' },
-  { emoji: '🔧', name: 'Others' },
-]
 
 const RADII = [
   { km: 1,  label: '1 km',  desc: 'Your immediate street or building' },
@@ -87,6 +73,38 @@ export default function CreateListing({ nav, user, showToast, mobileNumber }) {
   // Form state
   const [errors, setErrors] = useState({})
   const [loading, setLoading] = useState(false)
+  const [dbCategories, setDbCategories] = useState([])
+
+useEffect(() => {
+  loadCategories()
+}, [])
+
+async function loadCategories() {
+  try {
+    const { data } = await supabase
+      .from('categories')
+      .select('name, emoji')
+      .eq('is_active', true)
+      .order('sort_order')
+    if (data && data.length > 0) setDbCategories(data)
+  } catch (e) {
+    // Fallback to hardcoded if DB fails
+    setDbCategories([
+      { emoji: '🍱', name: 'Home Food' },
+      { emoji: '🥡', name: 'Tiffin' },
+      { emoji: '🌸', name: 'Mehendi' },
+      { emoji: '🎂', name: 'Bakery' },
+      { emoji: '✂️', name: 'Tailoring' },
+      { emoji: '📚', name: 'Tuition' },
+      { emoji: '💄', name: 'Beautician' },
+      { emoji: '⚡', name: 'Electrician' },
+      { emoji: '🍎', name: 'Fruits' },
+      { emoji: '💐', name: 'Flowers' },
+      { emoji: '💻', name: 'Freelance' },
+      { emoji: '🔧', name: 'Others' },
+    ])
+  }
+}
 
   const fileInputRef = useRef(null)
   const locationDebounceRef = useRef(null)
@@ -464,7 +482,7 @@ export default function CreateListing({ nav, user, showToast, mobileNumber }) {
             <div className="input-group">
               <label className="input-label">Category *</label>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-                {CATEGORIES.map(cat => (
+                {dbCategories.map(cat => (
                   <div
                     key={cat.name}
                     onClick={() => { setCategory(cat.name); setErrors({}) }}
