@@ -1,14 +1,11 @@
-
 /**
- * Catalogue.js
- *
- * PURPOSE: Seller manages their product/service menu.
- * FEATURES: Add item, edit item, delete item.
- * DATA: Reads/writes to catalogue_items table in Supabase.
- * SECURITY: Only the business owner can modify items (enforced by RLS).
+ * Catalogue.js — Seller manages their product/service menu.
+ * Add, edit, delete items. Emoji field accepts paste and can be empty.
  */
 import React, { useState, useEffect } from 'react'
 import { supabase } from '../supabase'
+
+const EMOJI_OPTIONS = ['🍱','🥡','🌸','🎂','✂️','📚','💄','⚡','🍎','💐','💻','🔧','☕','🍕','🥗','🍰','🎁','⭐','🌟','💰','🏠','🚗','📱','🎵']
 
 export default function Catalogue({ nav, user, showToast }) {
   const [business, setBusiness] = useState(null)
@@ -16,19 +13,16 @@ export default function Catalogue({ nav, user, showToast }) {
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
   const [editingItem, setEditingItem] = useState(null)
-
-  // Form state
   const [formName, setFormName] = useState('')
   const [formDesc, setFormDesc] = useState('')
   const [formPrice, setFormPrice] = useState('')
   const [formCategory, setFormCategory] = useState('')
-  const [formEmoji, setFormEmoji] = useState('⭐')
+  const [formEmoji, setFormEmoji] = useState('')
   const [formError, setFormError] = useState('')
   const [saving, setSaving] = useState(false)
 
   useEffect(() => { if (user) loadData() }, [user])
 
-  /** Load business and its catalogue items */
   async function loadData() {
     setLoading(true)
     try {
@@ -38,7 +32,6 @@ export default function Catalogue({ nav, user, showToast }) {
         .eq('owner_id', user.id)
         .single()
       setBusiness(biz)
-
       if (biz) {
         const { data: catItems } = await supabase
           .from('catalogue_items')
@@ -53,34 +46,32 @@ export default function Catalogue({ nav, user, showToast }) {
     setLoading(false)
   }
 
-  /** Open add form (blank) */
   function openAddForm() {
     setEditingItem(null)
     setFormName('')
     setFormDesc('')
     setFormPrice('')
     setFormCategory('')
-    setFormEmoji('⭐')
+    setFormEmoji('')
     setFormError('')
     setShowForm(true)
   }
 
-  /** Open edit form prefilled with item data */
   function openEditForm(item) {
     setEditingItem(item)
     setFormName(item.name)
     setFormDesc(item.description || '')
     setFormPrice(item.price || '')
     setFormCategory(item.category_label || '')
-    setFormEmoji(item.emoji || '⭐')
+    setFormEmoji(item.emoji || '')
     setFormError('')
     setShowForm(true)
   }
 
-  /** Save item — insert or update */
   async function saveItem() {
     if (!formName.trim()) { setFormError('Item name is required'); return }
     if (!formPrice.trim()) { setFormError('Price is required'); return }
+    if (!business) { setFormError('No business found. Please create a listing first.'); return }
     setSaving(true)
     try {
       const payload = {
@@ -89,38 +80,35 @@ export default function Catalogue({ nav, user, showToast }) {
         description: formDesc.trim(),
         price: formPrice.trim(),
         category_label: formCategory.trim(),
-        emoji: formEmoji,
+        emoji: formEmoji.trim() || '⭐',
         sort_order: editingItem ? editingItem.sort_order : items.length
       }
-
       if (editingItem) {
-        // Update existing item
-        await supabase.from('catalogue_items').update(payload).eq('id', editingItem.id)
+        const { error } = await supabase.from('catalogue_items').update(payload).eq('id', editingItem.id)
+        if (error) throw error
         showToast('Item updated!')
       } else {
-        // Add new item
-        await supabase.from('catalogue_items').insert(payload)
+        const { error } = await supabase.from('catalogue_items').insert(payload)
+        if (error) throw error
         showToast('Item added!')
       }
-
       setShowForm(false)
       await loadData()
     } catch (e) {
-      setFormError('Could not save item. Please try again.')
       console.error('Save item error:', e)
+      setFormError('Could not save item: ' + (e.message || 'Please try again.'))
     }
     setSaving(false)
   }
 
-  /** Delete item with confirmation */
   async function deleteItem(item) {
-    if (!window.confirm('Delete "' + item.name + '"? This cannot be undone.')) return
+    if (!window.confirm('Delete "' + item.name + '"?')) return
     try {
       await supabase.from('catalogue_items').delete().eq('id', item.id)
       showToast('Item deleted.')
       await loadData()
     } catch (e) {
-      showToast('Could not delete item. Try again.')
+      showToast('Could not delete item.')
     }
   }
 
@@ -135,41 +123,48 @@ export default function Catalogue({ nav, user, showToast }) {
     )
   }
 
+  if (!business) {
+    return (
+      <div style={{ minHeight: '100vh', background: '#F2F6F4' }}>
+        <div className="topbar">
+          <button className="back-btn" onClick={() => nav('dashboard')}>←</button>
+          <span className="topbar-title">My Catalogue</span>
+        </div>
+        <div className="empty-state">
+          <div className="empty-icon">🏪</div>
+          <div className="empty-title">No listing yet</div>
+          <div className="empty-sub">Create your business listing first, then add catalogue items.</div>
+          <button className="btn btn-primary" onClick={() => nav('create')}>Create My Listing</button>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div style={{ minHeight: '100vh', background: '#F2F6F4', paddingBottom: 40 }}>
-      {/* Top bar */}
       <div className="topbar">
         <button className="back-btn" onClick={() => nav('dashboard')}>←</button>
         <span className="topbar-title">My Catalogue</span>
-        <button
-          className="btn btn-primary btn-sm"
-          style={{ marginLeft: 'auto' }}
-          onClick={openAddForm}
-        >+ Add Item</button>
+        <button className="btn btn-primary btn-sm" style={{ marginLeft: 'auto' }} onClick={openAddForm}>+ Add Item</button>
       </div>
 
       <div style={{ padding: '14px 16px' }}>
-        {/* Business name */}
-        {business && (
-          <div className="card" style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
-            <span style={{ fontSize: 24 }}>📋</span>
-            <div>
-              <p style={{ fontWeight: 700, fontSize: 14 }}>{business.name}</p>
-              <p style={{ fontSize: 12, color: '#516B61' }}>{items.length} item{items.length !== 1 ? 's' : ''} in catalogue</p>
-            </div>
+        <div className="card" style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
+          <span style={{ fontSize: 24 }}>📋</span>
+          <div>
+            <p style={{ fontWeight: 700, fontSize: 14 }}>{business.name}</p>
+            <p style={{ fontSize: 12, color: '#516B61' }}>{items.length} item{items.length !== 1 ? 's' : ''} in catalogue</p>
           </div>
-        )}
+        </div>
 
-        {/* Empty state */}
         {items.length === 0 ? (
           <div className="empty-state">
             <div className="empty-icon">📋</div>
             <div className="empty-title">No items yet</div>
-            <div className="empty-sub">Add your products or services so customers know what you offer and at what price.</div>
+            <div className="empty-sub">Add your products or services with prices so customers know what you offer.</div>
             <button className="btn btn-primary" onClick={openAddForm}>Add First Item</button>
           </div>
         ) : (
-          /* Group items by category_label */
           Object.entries(
             items.reduce((groups, item) => {
               const key = item.category_label || 'General'
@@ -179,54 +174,23 @@ export default function Catalogue({ nav, user, showToast }) {
             }, {})
           ).map(([category, categoryItems]) => (
             <div key={category} style={{ marginBottom: 16 }}>
-              <p style={{ fontSize: 11, fontWeight: 700, color: '#516B61', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 8 }}>
-                {category}
-              </p>
+              <p style={{ fontSize: 11, fontWeight: 700, color: '#516B61', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 8 }}>{category}</p>
               <div className="card">
                 {categoryItems.map((item, i) => (
-                  <div
-                    key={item.id}
-                    style={{
-                      display: 'flex', alignItems: 'center', gap: 10,
-                      padding: '12px 0',
-                      borderBottom: i < categoryItems.length - 1 ? '0.5px solid rgba(0,0,0,0.07)' : 'none'
-                    }}
-                  >
-                    {/* Emoji thumbnail */}
-                    <div style={{
-                      width: 44, height: 44, borderRadius: 10,
-                      background: '#DDF4EC',
-                      display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      fontSize: 20, flexShrink: 0
-                    }}>
+                  <div key={item.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 0', borderBottom: i < categoryItems.length - 1 ? '0.5px solid rgba(0,0,0,0.07)' : 'none' }}>
+                    <div style={{ width: 44, height: 44, borderRadius: 10, background: '#DDF4EC', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22, flexShrink: 0 }}>
                       {item.emoji || '⭐'}
                     </div>
-
-                    {/* Item details */}
                     <div style={{ flex: 1 }}>
                       <p style={{ fontWeight: 600, fontSize: 14 }}>{item.name}</p>
-                      {item.description && (
-                        <p style={{ fontSize: 12, color: '#516B61', marginTop: 2 }}>{item.description}</p>
-                      )}
+                      {item.description && <p style={{ fontSize: 12, color: '#516B61', marginTop: 2 }}>{item.description}</p>}
                     </div>
-
-                    {/* Price */}
                     <div style={{ textAlign: 'right', flexShrink: 0 }}>
-                      <p style={{ fontWeight: 700, fontSize: 14, color: '#0D1F18' }}>{item.price}</p>
+                      <p style={{ fontWeight: 700, fontSize: 14 }}>{item.price}</p>
                     </div>
-
-                    {/* Edit / Delete buttons */}
                     <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
-                      <button
-                        className="btn btn-sm"
-                        style={{ fontSize: 11, padding: '5px 10px' }}
-                        onClick={() => openEditForm(item)}
-                      >Edit</button>
-                      <button
-                        className="btn btn-sm"
-                        style={{ fontSize: 11, padding: '5px 10px', color: '#E03535', borderColor: '#E03535' }}
-                        onClick={() => deleteItem(item)}
-                      >Delete</button>
+                      <button className="btn btn-sm" style={{ fontSize: 11, padding: '5px 10px' }} onClick={() => openEditForm(item)}>Edit</button>
+                      <button className="btn btn-sm" style={{ fontSize: 11, padding: '5px 10px', color: '#E03535', borderColor: '#E03535' }} onClick={() => deleteItem(item)}>Delete</button>
                     </div>
                   </div>
                 ))}
@@ -236,74 +200,62 @@ export default function Catalogue({ nav, user, showToast }) {
         )}
       </div>
 
-      {/* Add / Edit form — slide-up sheet */}
+      {/* Add/Edit modal */}
       {showForm && (
         <div className="modal-overlay open" onClick={e => { if (e.target === e.currentTarget) setShowForm(false) }}>
-          <div className="modal-sheet">
+          <div className="modal-sheet" style={{ maxHeight: '90vh', overflowY: 'auto' }}>
             <div className="modal-handle"></div>
-            <h3 style={{ fontSize: 17, fontWeight: 700, marginBottom: 16 }}>
-              {editingItem ? 'Edit Item' : 'Add New Item'}
-            </h3>
+            <h3 style={{ fontSize: 17, fontWeight: 700, marginBottom: 16 }}>{editingItem ? 'Edit Item' : 'Add New Item'}</h3>
 
             <div className="input-group">
               <label className="input-label">Item Name *</label>
-              <input
-                className={formError && !formName ? 'input error' : 'input'}
-                placeholder="e.g. Chicken Biryani"
-                value={formName}
-                onChange={e => { setFormName(e.target.value); setFormError('') }}
-              />
+              <input className={formError && !formName ? 'input error' : 'input'} placeholder="e.g. Chicken Biryani" value={formName} onChange={e => { setFormName(e.target.value); setFormError('') }} />
             </div>
 
             <div className="input-group">
               <label className="input-label">Description</label>
-              <input
-                className="input"
-                placeholder="e.g. Full plate, serves 1"
-                value={formDesc}
-                onChange={e => setFormDesc(e.target.value)}
-              />
+              <input className="input" placeholder="e.g. Full plate, serves 1" value={formDesc} onChange={e => setFormDesc(e.target.value)} />
             </div>
 
             <div className="input-group">
               <label className="input-label">Price *</label>
-              <input
-                className={formError && !formPrice ? 'input error' : 'input'}
-                placeholder="e.g. ₹180 per plate"
-                value={formPrice}
-                onChange={e => { setFormPrice(e.target.value); setFormError('') }}
-              />
+              <input className={formError && !formPrice ? 'input error' : 'input'} placeholder="e.g. ₹180 per plate" value={formPrice} onChange={e => { setFormPrice(e.target.value); setFormError('') }} />
             </div>
 
             <div className="input-group">
-              <label className="input-label">Category / Section Label</label>
-              <input
-                className="input"
-                placeholder="e.g. Rice Meals, Tiffin, Desserts"
-                value={formCategory}
-                onChange={e => setFormCategory(e.target.value)}
-              />
+              <label className="input-label">Section / Category Label</label>
+              <input className="input" placeholder="e.g. Rice Meals, Tiffin, Desserts" value={formCategory} onChange={e => setFormCategory(e.target.value)} />
             </div>
 
+            {/* Emoji — paste friendly, can be empty */}
             <div className="input-group">
-              <label className="input-label">Emoji Icon</label>
+              <label className="input-label">Icon (optional — paste any emoji)</label>
               <input
                 className="input"
-                placeholder="⭐"
+                placeholder="Paste or type an emoji, or leave empty"
                 value={formEmoji}
                 onChange={e => setFormEmoji(e.target.value)}
-                style={{ fontSize: 20 }}
+                style={{ fontSize: 22 }}
               />
+              {/* Quick emoji picker */}
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 8 }}>
+                {EMOJI_OPTIONS.map(em => (
+                  <span
+                    key={em}
+                    onClick={() => setFormEmoji(em)}
+                    style={{
+                      fontSize: 24, cursor: 'pointer', padding: '4px 6px',
+                      borderRadius: 8, background: formEmoji === em ? '#DDF4EC' : '#F2F6F4',
+                      border: formEmoji === em ? '1.5px solid #0A6B52' : '1.5px solid transparent'
+                    }}
+                  >{em}</span>
+                ))}
+              </div>
             </div>
 
             {formError && <div className="field-error show" style={{ marginBottom: 12 }}>{formError}</div>}
 
-            <button
-              className="btn btn-primary"
-              onClick={saveItem}
-              disabled={saving}
-              style={{ marginBottom: 10, opacity: saving ? 0.7 : 1 }}
-            >
+            <button className="btn btn-primary" onClick={saveItem} disabled={saving} style={{ marginBottom: 10, opacity: saving ? 0.7 : 1 }}>
               {saving ? 'Saving...' : editingItem ? 'Save Changes' : 'Add Item'}
             </button>
             <button className="btn" onClick={() => setShowForm(false)}>Cancel</button>
