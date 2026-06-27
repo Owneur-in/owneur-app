@@ -93,6 +93,7 @@ export default function App() {
       {screen === 'admin-login'    && <AdminLogin {...shared} />}
       {screen === 'admin'          && <Admin {...shared} />}
       {screen === 'suspended'      && <Suspended {...shared} />}
+      {screen === 'buyer-login'    && <BuyerLogin {...shared} />}
       <Toast show={toast.show} msg={toast.msg} />
     </div>
   )
