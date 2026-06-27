@@ -1,11 +1,19 @@
 /**
  * Home.js — Customer discovery screen.
- * Categories loaded from database — respects admin hide/show.
- * Location uses browser geolocation + Nominatim reverse geocoding.
- * Spatial query via get_nearby_sellers RPC (PostGIS).
+ *
+ * LOCATION FLOW:
+ *   - First visit: LocationPicker opens automatically
+ *   - Returning buyer: saved location from localStorage used (Scenario 10)
+ *   - Location chip at top: always tappable to change
+ *   - Outside Chennai: accepted, shown expand message (Scenario 11)
+ *   - No results: distinct empty state with CTAs (Scenario 7)
+ *
+ * Categories loaded from DB — respects admin hide/show.
+ * Businesses filtered by spatial proximity (PostGIS).
  */
 import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { supabase } from '../supabase'
+import LocationPicker from './LocationPicker'
 
 const CAT_BG = {
   'Home Food': 'linear-gradient(135deg,#DDF4EC,#7ECFB0)',
@@ -13,100 +21,109 @@ const CAT_BG = {
   'Mehendi': 'linear-gradient(135deg,#FBEAF0,#F4C0D1)',
   'Bakery': 'linear-gradient(135deg,#FAECE7,#F5C4B3)',
   'Tuition': 'linear-gradient(135deg,#E8F0FB,#B5D4F4)',
+  'Dance class': 'linear-gradient(135deg,#E8F0FB,#B5D4F4)',
   'Beautician': 'linear-gradient(135deg,#FBEAF0,#ED93B1)',
   'Electrician': 'linear-gradient(135deg,#FEF3DC,#FAC775)',
   'Flowers': 'linear-gradient(135deg,#EAF3DE,#C0DD97)',
   'Fruits': 'linear-gradient(135deg,#DDF4EC,#7ECFB0)',
   'Freelance': 'linear-gradient(135deg,#E8F0FB,#B5D4F4)',
   'Tailoring': 'linear-gradient(135deg,#E8F0FB,#B5D4F4)',
+  'Fish': 'linear-gradient(135deg,#E8F0FB,#B5D4F4)',
+  'Mechanic': 'linear-gradient(135deg,#F1EFE8,#D3D1C7)',
   'Others': 'linear-gradient(135deg,#F1EFE8,#D3D1C7)',
 }
 
 const CAT_EMOJI = {
   'Home Food': '🍱', 'Tiffin': '🥡', 'Mehendi': '🌸', 'Bakery': '🎂',
-  'Tailoring': '✂️', 'Tuition': '📚', 'Beautician': '💄', 'Electrician': '⚡',
-  'Fruits': '🍎', 'Flowers': '💐', 'Freelance': '💻', 'Others': '🔧','Fish': '🐟',
-  'Mechanic': '🔩', 'Dance class': '💃',
+  'Tailoring': '✂️', 'Tuition': '📚', 'Dance class': '💃', 'Beautician': '💄',
+  'Electrician': '⚡', 'Fruits': '🍎', 'Flowers': '💐', 'Freelance': '💻',
+  'Fish': '🐟', 'Mechanic': '🔩', 'Others': '🔧'
+}
+
+// Key for localStorage — saves buyer's last location
+const LOCATION_STORAGE_KEY = 'owneur_buyer_location'
+
+// Check if a location is outside Chennai (Scenario 11)
+function isOutsideChennai(lat, lng) {
+  // Chennai bounding box approx
+  return lat < 12.75 || lat > 13.25 || lng < 79.95 || lng > 80.45
 }
 
 export default function Home({ nav, setSelectedBiz, showToast }) {
-  const [userLat, setUserLat] = useState(null)
-  const [userLng, setUserLng] = useState(null)
-  const [locationText, setLocationText] = useState('Detecting location...')
-  const [locationEditing, setLocationEditing] = useState(false)
-  const [locationSearch, setLocationSearch] = useState('')
-  const [locationSuggestions, setLocationSuggestions] = useState([])
-  const [locationLoading, setLocationLoading] = useState(false)
+  const [showLocationPicker, setShowLocationPicker] = useState(false)
+  const [activeLocation, setActiveLocation] = useState(null)
+  const [outsideChennai, setOutsideChennai] = useState(false)
   const [businesses, setBusinesses] = useState([])
   const [categories, setCategories] = useState([])
   const [loading, setLoading] = useState(true)
   const [noResults, setNoResults] = useState(false)
-
-  const searchDebounceRef = useRef(null)
   const locationDebounceRef = useRef(null)
 
   useEffect(() => {
     loadCategoriesFromDB()
-    detectLocation()
+    initLocation()
   }, [])
 
-  // Load ONLY active categories from database — respects admin hide/show
+  // Load only active categories from DB
   async function loadCategoriesFromDB() {
     try {
-      const { data, error } = await supabase
+      const { data } = await supabase
         .from('categories')
-        .select('name, emoji, is_active')
+        .select('name, emoji')
         .eq('is_active', true)
         .order('sort_order')
-      if (error) throw error
-      if (data && data.length > 0) {
-        setCategories(data)
-      }
+      if (data && data.length > 0) setCategories(data)
     } catch (e) {
       console.error('Category load error:', e)
     }
   }
 
-  function detectLocation() {
-    if (!navigator.geolocation) {
-      setDefaultLocation()
-      return
-    }
-    navigator.geolocation.getCurrentPosition(
-      async (pos) => {
-        const { latitude, longitude } = pos.coords
-        setUserLat(latitude)
-        setUserLng(longitude)
-        await reverseGeocode(latitude, longitude)
-        loadBusinessesByCoords(latitude, longitude)
-      },
-      () => { setDefaultLocation() },
-      { timeout: 8000, maximumAge: 300000 }
-    )
-  }
-
-  function setDefaultLocation() {
-    setLocationText('Chennai, Tamil Nadu')
-    setUserLat(13.0827)
-    setUserLng(80.2707)
-    loadBusinessesByCoords(13.0827, 80.2707)
-  }
-
-  async function reverseGeocode(lat, lng) {
+  // Scenario 10 — check localStorage for saved location
+  function initLocation() {
     try {
-      const res = await fetch(
-        `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json&accept-language=en`
-      )
-      const data = await res.json()
-      const addr = data.address || {}
-      const parts = []
-      if (addr.neighbourhood) parts.push(addr.neighbourhood)
-      else if (addr.suburb) parts.push(addr.suburb)
-      if (addr.city || addr.town) parts.push(addr.city || addr.town)
-      if (addr.state) parts.push(addr.state)
-      setLocationText(parts.length > 0 ? parts.join(', ') : 'Your Location')
-    } catch (e) {
-      setLocationText('Your Location')
+      const saved = localStorage.getItem(LOCATION_STORAGE_KEY)
+      if (saved) {
+        const loc = JSON.parse(saved)
+        if (loc && loc.lat && loc.lng && loc.locality) {
+          // Returning buyer — skip picker, use saved location
+          setActiveLocation(loc)
+          loadBusinessesByCoords(loc.lat, loc.lng)
+          return
+        }
+      }
+    } catch (e) {}
+    // First visit — show location picker
+    setShowLocationPicker(true)
+    setLoading(false)
+  }
+
+  // Called when buyer confirms a location from LocationPicker
+  function handleLocationSelected(location) {
+    setShowLocationPicker(false)
+    setActiveLocation(location)
+
+    // Check Scenario 11 — outside Chennai
+    if (isOutsideChennai(location.lat, location.lng)) {
+      setOutsideChennai(true)
+    } else {
+      setOutsideChennai(false)
+    }
+
+    // Save to localStorage for returning visits
+    try {
+      localStorage.setItem(LOCATION_STORAGE_KEY, JSON.stringify(location))
+    } catch (e) {}
+
+    loadBusinessesByCoords(location.lat, location.lng)
+  }
+
+  function handleLocationPickerClose() {
+    setShowLocationPicker(false)
+    if (!activeLocation) {
+      // No location set yet — use Chennai default
+      const defaultLoc = { locality: 'Chennai', fullAddress: 'Chennai, Tamil Nadu', lat: 13.0827, lng: 80.2707 }
+      setActiveLocation(defaultLoc)
+      loadBusinessesByCoords(defaultLoc.lat, defaultLoc.lng)
     }
   }
 
@@ -119,7 +136,7 @@ export default function Home({ nav, setSelectedBiz, showToast }) {
         user_lng: lng
       })
       if (error || !data || data.length === 0) {
-        // Fallback — show all active businesses
+        // Fallback
         const { data: fallback } = await supabase
           .from('businesses')
           .select('*, profiles(full_name)')
@@ -136,127 +153,95 @@ export default function Home({ nav, setSelectedBiz, showToast }) {
       }
     } catch (e) {
       console.error('Load businesses error:', e)
+      setNoResults(true)
     }
     setLoading(false)
   }, [])
-
-  async function handleLocationSearchInput(val) {
-    setLocationSearch(val)
-    if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current)
-    if (val.length < 2) { setLocationSuggestions([]); return }
-    searchDebounceRef.current = setTimeout(async () => {
-      setLocationLoading(true)
-      try {
-        const res = await fetch(
-          `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(val)}&format=json&limit=6&countrycodes=in&addressdetails=1`,
-          { headers: { 'Accept': 'application/json' } }
-        )
-        const results = await res.json()
-        if (results && results.length > 0) {
-          const suggestions = results.map(r => {
-            const addr = r.address || {}
-            const parts = []
-            if (addr.neighbourhood) parts.push(addr.neighbourhood)
-            else if (addr.suburb) parts.push(addr.suburb)
-            if (addr.city || addr.town || addr.village) parts.push(addr.city || addr.town || addr.village)
-            if (addr.state) parts.push(addr.state)
-            return {
-              text: parts.length > 0 ? parts.join(', ') : r.display_name.split(', ').slice(0, 3).join(', '),
-              lat: parseFloat(r.lat),
-              lng: parseFloat(r.lon)
-            }
-          })
-          const seen = new Set()
-          setLocationSuggestions(suggestions.filter(s => {
-            if (seen.has(s.text)) return false
-            seen.add(s.text)
-            return true
-          }))
-        } else {
-          setLocationSuggestions([])
-        }
-      } catch (e) {
-        setLocationSuggestions([])
-      }
-      setLocationLoading(false)
-    }, 400)
-  }
-
-  function selectLocation(s) {
-    setUserLat(s.lat)
-    setUserLng(s.lng)
-    setLocationText(s.text)
-    setLocationSearch('')
-    setLocationSuggestions([])
-    setLocationEditing(false)
-    if (locationDebounceRef.current) clearTimeout(locationDebounceRef.current)
-    locationDebounceRef.current = setTimeout(() => loadBusinessesByCoords(s.lat, s.lng), 300)
-  }
 
   function openBiz(biz) {
     setSelectedBiz(biz)
     nav('biz-detail')
   }
 
+  function changeLocation() {
+    setShowLocationPicker(true)
+  }
+
+  // ── RENDER ────────────────────────────────────────────────────────
+
   return (
     <div style={{ minHeight: '100vh', background: '#F2F6F4', paddingBottom: 80 }}>
+
+      {/* Location Picker — fullscreen overlay */}
+      {showLocationPicker && (
+        <LocationPicker
+          onLocationSelected={handleLocationSelected}
+          onClose={handleLocationPickerClose}
+        />
+      )}
 
       {/* Hero */}
       <div className="hero" style={{ paddingTop: 16, paddingBottom: 20 }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
-          {locationEditing ? (
-            <div style={{ flex: 1, position: 'relative' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'rgba(255,255,255,0.2)', borderRadius: 12, padding: '10px 14px' }}>
-                <span>📍</span>
-                <input
-                  style={{ flex: 1, border: 'none', background: 'none', color: '#fff', fontSize: 14, outline: 'none', fontFamily: 'inherit' }}
-                  placeholder="Search any city in India..."
-                  value={locationSearch}
-                  onChange={e => handleLocationSearchInput(e.target.value)}
-                  autoFocus
-                />
-                {locationLoading && <span style={{ color: 'rgba(255,255,255,0.6)', fontSize: 12 }}>...</span>}
-                <button onClick={() => { setLocationEditing(false); setLocationSearch(''); setLocationSuggestions([]) }}
-                  style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.8)', cursor: 'pointer', fontSize: 18, padding: 0 }}>✕</button>
-              </div>
-              {locationSuggestions.length > 0 && (
-                <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, background: '#fff', borderRadius: 14, zIndex: 300, boxShadow: '0 12px 40px rgba(0,0,0,0.2)', overflow: 'hidden', marginTop: 6 }}>
-                  {locationSuggestions.map((s, i) => (
-                    <div key={i} onClick={() => selectLocation(s)}
-                      style={{ padding: '13px 16px', cursor: 'pointer', display: 'flex', gap: 10, alignItems: 'flex-start', borderBottom: i < locationSuggestions.length - 1 ? '0.5px solid rgba(0,0,0,0.08)' : 'none', fontSize: 14, color: '#0D1F18', lineHeight: 1.4 }}>
-                      <span style={{ color: '#0A6B52', flexShrink: 0 }}>📍</span>
-                      {s.text}
-                    </div>
-                  ))}
-                  <div onClick={() => window.open('https://www.google.com/maps/search/' + encodeURIComponent(locationSearch), '_blank')}
-                    style={{ padding: '11px 16px', cursor: 'pointer', display: 'flex', gap: 8, alignItems: 'center', background: '#F2F6F4', fontSize: 13, color: '#1459A8', fontWeight: 600 }}>
-                    <span>🗺</span>Open Google Maps
-                  </div>
-                </div>
-              )}
-            </div>
-          ) : (
-            <div style={{ flex: 1 }}>
-              <button onClick={() => setLocationEditing(true)}
-                style={{ background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left', padding: 0 }}>
-                <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.75)', marginBottom: 3, display: 'flex', alignItems: 'center', gap: 4 }}>
-                  📍 {locationText} <span style={{ fontSize: 10, opacity: 0.6 }}>✏️</span>
-                </p>
-                <p style={{ fontSize: 18, fontWeight: 800, color: '#fff', letterSpacing: -0.3 }}>Find Makers Near You</p>
-              </button>
-            </div>
-          )}
-          <button onClick={() => nav('saved')}
-            style={{ width: 36, height: 36, borderRadius: '50%', background: 'rgba(255,255,255,0.15)', border: 'none', color: '#fff', cursor: 'pointer', fontSize: 16, flexShrink: 0, marginLeft: 8 }}>♡</button>
+          <div style={{ flex: 1 }}>
+            {/* Location chip — always tappable */}
+            <button
+              onClick={changeLocation}
+              style={{ background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left', padding: 0 }}
+            >
+              <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.8)', marginBottom: 3, display: 'flex', alignItems: 'center', gap: 4 }}>
+                📍 {activeLocation ? activeLocation.locality : 'Set your location'}
+                <span style={{ fontSize: 10, opacity: 0.6, background: 'rgba(255,255,255,0.15)', padding: '1px 6px', borderRadius: 8 }}>
+                  Change
+                </span>
+              </p>
+              <p style={{ fontSize: 18, fontWeight: 800, color: '#fff', letterSpacing: -0.3 }}>
+                Find Makers Near You
+              </p>
+            </button>
+          </div>
+          <button
+            onClick={() => nav('saved')}
+            style={{ width: 36, height: 36, borderRadius: '50%', background: 'rgba(255,255,255,0.15)', border: 'none', color: '#fff', cursor: 'pointer', fontSize: 16, flexShrink: 0, marginLeft: 8 }}
+          >♡</button>
         </div>
         <div className="search-bar" onClick={() => nav('search')} style={{ cursor: 'pointer' }}>
-          <svg style={{ width: 16, height: 16, stroke: 'rgba(255,255,255,0.7)', fill: 'none', strokeWidth: 2, flexShrink: 0 }} viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+          <svg style={{ width: 16, height: 16, stroke: 'rgba(255,255,255,0.7)', fill: 'none', strokeWidth: 2, flexShrink: 0 }} viewBox="0 0 24 24">
+            <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
+          </svg>
           <span style={{ color: 'rgba(255,255,255,0.7)', fontSize: 14 }}>Search tiffin, mehendi, tailor...</span>
         </div>
       </div>
 
       <div style={{ padding: '14px 16px' }}>
-        {/* Categories from DB — only active ones */}
+
+        {/* Scenario 11 — Outside Chennai banner */}
+        {outsideChennai && activeLocation && (
+          <div style={{ background: '#DDF4EC', borderRadius: 14, padding: '14px 16px', marginBottom: 16 }}>
+            <p style={{ fontSize: 14, fontWeight: 700, color: '#064434', marginBottom: 6 }}>
+              owneur is live in Chennai right now 🌱
+            </p>
+            <p style={{ fontSize: 13, color: '#516B61', marginBottom: 12, lineHeight: 1.5 }}>
+              We are expanding soon! Meanwhile you can browse Chennai sellers.
+            </p>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <button
+                className="btn btn-sm"
+                style={{ background: '#0A6B52', color: '#fff', borderColor: '#0A6B52', fontSize: 12 }}
+                onClick={() => {
+                  const chennai = { locality: 'Chennai', fullAddress: 'Chennai, Tamil Nadu', lat: 13.0827, lng: 80.2707 }
+                  handleLocationSelected(chennai)
+                }}
+              >Browse Chennai sellers</button>
+              <button className="btn btn-sm" style={{ fontSize: 12 }}
+                onClick={() => showToast('We will notify you when owneur reaches ' + activeLocation.locality + '!')}>
+                Notify me when we expand
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Categories from DB */}
         {categories.length > 0 && (
           <>
             <div className="section-label">Browse by Category</div>
@@ -265,64 +250,93 @@ export default function Home({ nav, setSelectedBiz, showToast }) {
                 <div key={cat.name} onClick={() => nav('search')}
                   style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 5, padding: '10px 4px', background: '#fff', border: '0.5px solid rgba(0,0,0,0.07)', borderRadius: 12, cursor: 'pointer' }}>
                   <div style={{ width: 38, height: 38, borderRadius: 10, background: CAT_BG[cat.name] || '#F2F6F4', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20 }}>
-                    {cat.emoji}
+                    {cat.emoji || CAT_EMOJI[cat.name] || '🔧'}
                   </div>
-                  <span style={{ fontSize: 10, fontWeight: 600, color: '#0D1F18', textAlign: 'center', lineHeight: 1.2 }}>{cat.name}</span>
+                  <span style={{ fontSize: 10, fontWeight: 600, color: '#0D1F18', textAlign: 'center', lineHeight: 1.2 }}>
+                    {cat.name}
+                  </span>
                 </div>
               ))}
             </div>
           </>
         )}
 
-        {/* Businesses */}
+        {/* Results count */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-          <div className="section-label" style={{ margin: 0 }}>📍 Near You</div>
+          <div className="section-label" style={{ margin: 0 }}>
+            {activeLocation ? `📍 Near ${activeLocation.locality}` : '🏪 All Makers'}
+          </div>
           {!loading && <span style={{ fontSize: 11, color: '#516B61' }}>{businesses.length} found</span>}
         </div>
 
-        {loading ? (
+        {/* Loading */}
+        {loading && (
           <div style={{ textAlign: 'center', padding: 48, color: '#516B61' }}>
             <div style={{ fontSize: 32, marginBottom: 10 }}>⊙</div>
             <p>Finding makers near you...</p>
           </div>
-        ) : noResults ? (
-          <div style={{ background: '#fff', borderRadius: 20, padding: '36px 24px', textAlign: 'center', border: '0.5px solid rgba(0,0,0,0.07)' }}>
-            <div style={{ fontSize: 52, marginBottom: 12 }}>🗺️</div>
-            <p style={{ fontSize: 18, fontWeight: 700, marginBottom: 6 }}>No makers in your area yet</p>
-            <p style={{ fontSize: 14, color: '#516B61', lineHeight: 1.6, marginBottom: 20 }}>Try a nearby area or be the first maker here!</p>
-            <button className="btn btn-primary" onClick={() => setLocationEditing(true)}>📍 Try a Different Location</button>
-            <button className="btn btn-outline" style={{ marginTop: 10 }} onClick={() => nav('login')}>List My Business Here →</button>
+        )}
+
+        {/* No location set yet */}
+        {!loading && !activeLocation && !showLocationPicker && (
+          <div style={{ textAlign: 'center', padding: 48 }}>
+            <div style={{ fontSize: 48, marginBottom: 16 }}>📍</div>
+            <p style={{ fontSize: 16, fontWeight: 700, marginBottom: 8 }}>Set your location</p>
+            <p style={{ fontSize: 14, color: '#516B61', marginBottom: 20 }}>
+              Tell us where you are so we can show nearby sellers
+            </p>
+            <button className="btn btn-primary" onClick={changeLocation}>Set My Location</button>
           </div>
-        ) : (
-          businesses.map(biz => (
-            <div key={biz.id} className="biz-card" onClick={() => openBiz(biz)}>
-              <div className="biz-card-img" style={{ background: CAT_BG[biz.category] || 'linear-gradient(135deg,#F1EFE8,#D3D1C7)' }}>
-                <span style={{ fontSize: 42 }}>{CAT_EMOJI[biz.category] || '🔧'}</span>
-                {biz.is_verified && (
-                  <div style={{ position: 'absolute', top: 8, right: 8 }}>
-                    <span className="verified-badge" style={{ fontSize: 10 }}>✓ Verified</span>
-                  </div>
+        )}
+
+        {/* Scenario 7 — No results */}
+        {!loading && noResults && activeLocation && (
+          <div style={{ background: '#fff', borderRadius: 20, padding: '36px 24px', textAlign: 'center', border: '0.5px solid rgba(0,0,0,0.07)' }}>
+            <div style={{ fontSize: 52, marginBottom: 12 }}>🏘️</div>
+            <p style={{ fontSize: 18, fontWeight: 700, marginBottom: 8 }}>
+              No makers in {activeLocation.locality} yet
+            </p>
+            <p style={{ fontSize: 14, color: '#516B61', lineHeight: 1.6, marginBottom: 24 }}>
+              owneur is growing fast! Be the first seller in your area, or expand your search.
+            </p>
+            <button className="btn btn-primary" style={{ marginBottom: 12 }} onClick={changeLocation}>
+              Search a Different Area
+            </button>
+            <button className="btn btn-outline" onClick={() => nav('login')}>
+              List My Business Here →
+            </button>
+          </div>
+        )}
+
+        {/* Business cards */}
+        {!loading && !noResults && businesses.map(biz => (
+          <div key={biz.id} className="biz-card" onClick={() => openBiz(biz)}>
+            <div className="biz-card-img" style={{ background: CAT_BG[biz.category] || 'linear-gradient(135deg,#F1EFE8,#D3D1C7)' }}>
+              <span style={{ fontSize: 42 }}>{CAT_EMOJI[biz.category] || '🔧'}</span>
+              {biz.is_verified && (
+                <div style={{ position: 'absolute', top: 8, right: 8 }}>
+                  <span className="verified-badge" style={{ fontSize: 10 }}>✓ Verified</span>
+                </div>
+              )}
+            </div>
+            <div className="biz-card-body">
+              <p className="biz-card-title">{biz.name}</p>
+              <p style={{ fontSize: 12, color: '#516B61', marginBottom: 4 }}>
+                by {biz.profiles?.full_name || biz.owner_name || 'Seller'}
+              </p>
+              <div className="biz-card-meta">
+                <span className="pill pill-green" style={{ fontSize: 11 }}>{biz.category}</span>
+                <span className="dist-badge">{biz.location_area}</span>
+                {biz.distance_km != null && (
+                  <span style={{ fontSize: 11, background: '#E8F0FB', color: '#1459A8', padding: '2px 8px', borderRadius: 20, fontWeight: 600 }}>
+                    {biz.distance_km} km
+                  </span>
                 )}
               </div>
-              <div className="biz-card-body">
-                <p className="biz-card-title">{biz.name}</p>
-                <p style={{ fontSize: 12, color: '#516B61', marginBottom: 4 }}>
-                  by {biz.profiles?.full_name || biz.owner_name || 'Seller'}
-                </p>
-                <div className="biz-card-meta">
-                  <span className="pill pill-green" style={{ fontSize: 11 }}>{biz.category}</span>
-                  <span className="dist-badge">{biz.location_area}</span>
-                  {biz.distance_km != null && (
-                    <span style={{ fontSize: 11, background: '#E8F0FB', color: '#1459A8', padding: '2px 8px', borderRadius: 20, fontWeight: 600 }}>
-                      {biz.distance_km} km
-                    </span>
-                  )}
-                </div>
-                <p className="biz-card-price">{biz.price_range}</p>
-              </div>
+              <p className="biz-card-price">{biz.price_range}</p>
             </div>
-          ))
-        )}
+          </div>
+        ))}
       </div>
 
       <div className="nav-bar">
