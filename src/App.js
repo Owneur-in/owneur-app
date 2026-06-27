@@ -23,6 +23,7 @@ import Terms from './pages/Terms'
 import AdminLogin from './pages/AdminLogin'
 import Admin from './pages/Admin'
 import Suspended from './pages/Suspended'
+import BuyerLogin from './pages/BuyerLogin'
 
 function Toast({ show, msg }) {
   return <div className={`toast ${show ? 'show' : ''}`}>{msg}</div>
