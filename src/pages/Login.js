@@ -1,29 +1,57 @@
+/**
+ * Login.js
+ *
+ * PURPOSE: Seller onboarding — collect full name + phone, then send OTP.
+ * SECURITY: Phone validated client-side before API call.
+ * FLOW: Login → OTP → KYC → Dashboard
+ * NOTE: Full name is stored in state and passed to dashboard on success.
+ *
+ * @param {function} nav - Navigate to screen
+ * @param {function} setMobileNumber - Store phone in app state
+ * @param {function} showToast - Show notification
+ * @param {function} setUser - Set logged-in user
+ */
 import React, { useState } from 'react'
 
 const FUNCTION_URL = process.env.REACT_APP_SUPABASE_URL + '/functions/v1/quick-worker'
 const ANON_KEY = process.env.REACT_APP_SUPABASE_ANON_KEY
 
-export default function Login({ nav, setMobileNumber, showToast }) {
+export default function Login({ nav, setMobileNumber, showToast, setSellerName }) {
+  const [fullName, setFullName] = useState('')
   const [mobile, setMobile] = useState('')
-  const [error, setError] = useState('')
+  const [nameError, setNameError] = useState('')
+  const [mobileError, setMobileError] = useState('')
   const [loading, setLoading] = useState(false)
 
-  function validate(val) {
+  /** Validate phone — digits only, exactly 10 */
+  function validatePhone(val) {
     const clean = val.replace(/\D/g, '').slice(0, 10)
     setMobile(clean)
     if (clean.length > 0 && clean.length < 10) {
-      setError('Please enter a valid 10-digit mobile number')
+      setMobileError('Please enter a valid 10-digit mobile number')
     } else {
-      setError('')
+      setMobileError('')
     }
   }
 
-  async function sendOTP() {
-    if (!/^\d{10}$/.test(mobile)) {
-      setError('Please enter a valid 10-digit mobile number')
-      return
+  /** Validate name — not empty */
+  function validateName(val) {
+    setFullName(val)
+    if (val.trim().length === 0) {
+      setNameError('Please enter your full name')
+    } else {
+      setNameError('')
     }
-    setError('')
+  }
+
+  /** Send OTP via edge function */
+  async function sendOTP() {
+    // Validate both fields
+    let valid = true
+    if (!fullName.trim()) { setNameError('Please enter your full name'); valid = false }
+    if (!/^\d{10}$/.test(mobile)) { setMobileError('Please enter a valid 10-digit mobile number'); valid = false }
+    if (!valid) return
+
     setLoading(true)
     try {
       const response = await fetch(FUNCTION_URL, {
@@ -36,11 +64,14 @@ export default function Login({ nav, setMobileNumber, showToast }) {
       })
       const data = await response.json()
       if (!data?.success) throw new Error(data?.error || 'Failed to send OTP')
+
+      // Store name and phone for use after verification
       setMobileNumber(mobile)
+      if (setSellerName) setSellerName(fullName.trim())
       showToast('OTP sent! You will receive a call shortly.')
       nav('otp')
     } catch (err) {
-      setError(err.message || 'Could not send OTP. Please try again.')
+      setMobileError(err.message || 'Could not send OTP. Please try again.')
     }
     setLoading(false)
   }
@@ -48,42 +79,75 @@ export default function Login({ nav, setMobileNumber, showToast }) {
   return (
     <div style={{ minHeight: '100vh', background: '#fff' }}>
       <div className="topbar">
-        <button className="back-btn" onClick={function() { nav('landing') }}>←</button>
+        <button className="back-btn" onClick={() => nav('landing')}>←</button>
         <span className="topbar-title">List Your Business</span>
       </div>
+
       <div style={{ padding: '32px 20px', maxWidth: 420, margin: '0 auto' }}>
+
+        {/* Icon and heading */}
         <div style={{ textAlign: 'center', marginBottom: 28 }}>
-          <div style={{ width: 64, height: 64, background: '#DDF4EC', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 28, margin: '0 auto 14px' }}>📱</div>
-          <h2 style={{ fontSize: 20, fontWeight: 700, marginBottom: 6 }}>Enter your mobile number</h2>
-          <p style={{ color: '#516B61', fontSize: 14 }}>You will receive a 4-digit OTP via call</p>
+          <div style={{
+            width: 64, height: 64, background: '#DDF4EC',
+            borderRadius: '50%', display: 'flex', alignItems: 'center',
+            justifyContent: 'center', fontSize: 28, margin: '0 auto 14px'
+          }}>📱</div>
+          <h2 style={{ fontSize: 20, fontWeight: 700, marginBottom: 6 }}>Create your account</h2>
+          <p style={{ color: '#516B61', fontSize: 14 }}>Enter your details to get started</p>
         </div>
+
+        {/* Full Name */}
         <div className="input-group">
+          <label className="input-label">Full Name *</label>
+          <input
+            className={nameError ? 'input error' : 'input'}
+            type="text"
+            placeholder="e.g. Priya Sharma"
+            value={fullName}
+            onChange={e => validateName(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && sendOTP()}
+          />
+          {nameError && <div className="field-error show">{nameError}</div>}
+        </div>
+
+        {/* Phone number */}
+        <div className="input-group">
+          <label className="input-label">Mobile Number *</label>
           <div style={{ display: 'flex', gap: 8 }}>
-            <div style={{ padding: '13px 14px', border: '1.5px solid rgba(0,0,0,0.12)', borderRadius: 12, fontSize: 14, fontWeight: 600, background: '#F2F6F4', color: '#0D1F18', whiteSpace: 'nowrap' }}>🇮🇳 +91</div>
+            <div style={{
+              padding: '13px 14px', border: '1.5px solid rgba(0,0,0,0.12)',
+              borderRadius: 12, fontSize: 14, fontWeight: 600,
+              background: '#F2F6F4', color: '#0D1F18', whiteSpace: 'nowrap'
+            }}>🇮🇳 +91</div>
             <input
-              className={error ? 'input error' : 'input'}
+              className={mobileError ? 'input error' : 'input'}
               type="tel"
               placeholder="98765 43210"
               maxLength={10}
               value={mobile}
-              onChange={function(e) { validate(e.target.value) }}
-              onKeyDown={function(e) { if (e.key === 'Enter') sendOTP() }}
+              onChange={e => validatePhone(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && sendOTP()}
               style={{ flex: 1 }}
             />
           </div>
-          {error && <div className="field-error show">{error}</div>}
+          {mobileError && <div className="field-error show">{mobileError}</div>}
         </div>
+
         <button
           className="btn btn-primary"
           onClick={sendOTP}
-          disabled={loading || mobile.length !== 10}
-          style={{ marginBottom: 20, opacity: loading || mobile.length !== 10 ? 0.7 : 1 }}
+          disabled={loading}
+          style={{ marginBottom: 20, opacity: loading ? 0.7 : 1 }}
         >
           {loading ? 'Sending OTP...' : 'Send OTP →'}
         </button>
+
         <p style={{ textAlign: 'center', fontSize: 12, color: '#516B61', lineHeight: 1.6 }}>
           By continuing, you agree to our{' '}
-          <span style={{ color: '#0A6B52', textDecoration: 'underline', cursor: 'pointer' }} onClick={function() { nav('terms') }}>Terms of Service</span>
+          <span
+            style={{ color: '#0A6B52', textDecoration: 'underline', cursor: 'pointer' }}
+            onClick={() => nav('terms')}
+          >Terms of Service</span>
         </p>
       </div>
     </div>
