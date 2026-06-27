@@ -1,17 +1,7 @@
 /**
- * App.js
- *
- * PURPOSE: Root component. Manages all screen routing and shared state.
- * PATTERN: Single-page app with screen-based navigation (no React Router).
- *   Each screen is rendered conditionally. nav() switches screens.
- * STATE:
- *   screen       — current active screen name
- *   prevScreen   — screen navigated from (for back buttons)
- *   user         — Supabase auth user object (null if not logged in)
- *   selectedBiz  — business object passed to detail/review screens
- *   mobileNumber — seller's phone number during OTP flow
- *   sellerName   — seller's full name captured during login
- * SECURITY: Auth state synced with Supabase on mount.
+ * App.js — Root component.
+ * Manages all screen routing and shared app state.
+ * To add a new screen: import it, add to shared props, add render line.
  */
 import React, { useState, useEffect } from 'react'
 import { supabase } from './supabase'
@@ -22,6 +12,7 @@ import KYC from './pages/KYC'
 import Dashboard from './pages/Dashboard'
 import CreateListing from './pages/CreateListing'
 import SellerProfile from './pages/SellerProfile'
+import Catalogue from './pages/Catalogue'
 import Home from './pages/Home'
 import Search from './pages/Search'
 import BizDetail from './pages/BizDetail'
@@ -32,9 +23,7 @@ import Terms from './pages/Terms'
 import AdminLogin from './pages/AdminLogin'
 import Admin from './pages/Admin'
 import Suspended from './pages/Suspended'
-import Catalogue from './pages/Catalogue'
 
-/** Toast notification component */
 function Toast({ show, msg }) {
   return <div className={`toast ${show ? 'show' : ''}`}>{msg}</div>
 }
@@ -48,7 +37,6 @@ export default function App() {
   const [mobileNumber, setMobileNumber] = useState('')
   const [sellerName, setSellerName] = useState('')
 
-  // Sync auth state with Supabase on app load
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (session) setUser(session.user)
@@ -59,20 +47,17 @@ export default function App() {
     return () => subscription.unsubscribe()
   }, [])
 
-  /** Navigate to a new screen, remembering where we came from */
   function nav(to) {
     setPrevScreen(screen)
     setScreen(to)
     window.scrollTo(0, 0)
   }
 
-  /** Show a toast message for 2.8 seconds */
   function showToast(msg) {
     setToast({ show: true, msg })
     setTimeout(() => setToast({ show: false, msg: '' }), 2800)
   }
 
-  // Props passed to every page
   const shared = {
     nav,
     prevScreen,
