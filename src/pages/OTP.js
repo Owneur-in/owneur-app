@@ -1,10 +1,14 @@
+/**
+ * OTP.js — Verify 4-digit OTP received via voice call.
+ * Passes full_name during verify so profile gets created correctly.
+ */
 import React, { useState, useRef, useEffect } from 'react'
 import { supabase } from '../supabase'
 
 const FUNCTION_URL = process.env.REACT_APP_SUPABASE_URL + '/functions/v1/quick-worker'
 const ANON_KEY = process.env.REACT_APP_SUPABASE_ANON_KEY
 
-export default function OTP({ nav, mobileNumber, setUser, showToast }) {
+export default function OTP({ nav, mobileNumber, setUser, showToast, sellerName }) {
   const [digits, setDigits] = useState(['', '', '', ''])
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
@@ -12,16 +16,16 @@ export default function OTP({ nav, mobileNumber, setUser, showToast }) {
   const [canResend, setCanResend] = useState(false)
   const refs = [useRef(), useRef(), useRef(), useRef()]
 
-  useEffect(function() {
-    setTimeout(function() { if (refs[0].current) refs[0].current.focus() }, 300)
+  useEffect(() => {
+    setTimeout(() => { if (refs[0].current) refs[0].current.focus() }, 300)
     startCountdown()
   }, [])
 
   function startCountdown() {
     setCountdown(30)
     setCanResend(false)
-    const timer = setInterval(function() {
-      setCountdown(function(c) {
+    const timer = setInterval(() => {
+      setCountdown(c => {
         if (c <= 1) { clearInterval(timer); setCanResend(true); return 0 }
         return c - 1
       })
@@ -50,19 +54,18 @@ export default function OTP({ nav, mobileNumber, setUser, showToast }) {
     try {
       const response = await fetch(FUNCTION_URL, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer ' + ANON_KEY
-        },
-        body: JSON.stringify({ phone: mobileNumber, action: 'verify', otp_entered: otpString })
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + ANON_KEY },
+        body: JSON.stringify({
+          phone: mobileNumber,
+          action: 'verify',
+          otp_entered: otpString,
+          full_name: sellerName || '' // pass name so profile gets saved
+        })
       })
       const data = await response.json()
       if (!data?.success) throw new Error(data?.error || 'Verification failed')
       if (data.access_token) {
-        await supabase.auth.setSession({
-          access_token: data.access_token,
-          refresh_token: data.refresh_token
-        })
+        await supabase.auth.setSession({ access_token: data.access_token, refresh_token: data.refresh_token })
         const { data: userData } = await supabase.auth.getUser()
         setUser(userData?.user)
       }
@@ -71,7 +74,7 @@ export default function OTP({ nav, mobileNumber, setUser, showToast }) {
     } catch (err) {
       setError(err.message || 'Incorrect OTP. Please try again.')
       setDigits(['', '', '', ''])
-      setTimeout(function() { if (refs[0].current) refs[0].current.focus() }, 100)
+      setTimeout(() => { if (refs[0].current) refs[0].current.focus() }, 100)
     }
     setLoading(false)
   }
@@ -84,7 +87,7 @@ export default function OTP({ nav, mobileNumber, setUser, showToast }) {
       const response = await fetch(FUNCTION_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + ANON_KEY },
-        body: JSON.stringify({ phone: mobileNumber, action: 'send' })
+        body: JSON.stringify({ phone: mobileNumber, action: 'send', full_name: sellerName || '' })
       })
       const data = await response.json()
       if (!data?.success) throw new Error('Failed to resend')
@@ -96,7 +99,7 @@ export default function OTP({ nav, mobileNumber, setUser, showToast }) {
   return (
     <div style={{ minHeight: '100vh', background: '#fff' }}>
       <div className="topbar">
-        <button className="back-btn" onClick={function() { nav('login') }}>←</button>
+        <button className="back-btn" onClick={() => nav('login')}>←</button>
         <span className="topbar-title">Verify OTP</span>
       </div>
       <div style={{ padding: '32px 20px', maxWidth: 420, margin: '0 auto' }}>
@@ -107,19 +110,15 @@ export default function OTP({ nav, mobileNumber, setUser, showToast }) {
           <p style={{ color: '#516B61', fontSize: 12, marginTop: 4 }}>You will receive a voice call with your OTP</p>
         </div>
         <div className="otp-row">
-          {digits.map(function(d, i) {
-            return (
-              <input key={i} ref={refs[i]} className={error ? 'otp-box error' : 'otp-box'} type="tel" maxLength={1} value={d}
-                onChange={function(e) { handleDigit(i, e.target.value) }}
-                onKeyDown={function(e) { handleKey(i, e) }}
-              />
-            )
-          })}
+          {digits.map((d, i) => (
+            <input key={i} ref={refs[i]} className={error ? 'otp-box error' : 'otp-box'} type="tel" maxLength={1} value={d}
+              onChange={e => handleDigit(i, e.target.value)}
+              onKeyDown={e => handleKey(i, e)}
+            />
+          ))}
         </div>
         {error && <div style={{ color: '#E03535', fontSize: 13, textAlign: 'center', marginBottom: 12, lineHeight: 1.5 }}>{error}</div>}
-        <button className="btn btn-primary" onClick={function() { verifyOTP(digits) }}
-          disabled={loading || digits.join('').length < 4}
-          style={{ marginBottom: 16, opacity: loading ? 0.7 : 1 }}>
+        <button className="btn btn-primary" onClick={() => verifyOTP(digits)} disabled={loading || digits.join('').length < 4} style={{ marginBottom: 16, opacity: loading ? 0.7 : 1 }}>
           {loading ? 'Verifying...' : 'Verify and Continue'}
         </button>
         <p style={{ textAlign: 'center', fontSize: 13, color: '#516B61' }}>
